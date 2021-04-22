@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -22,6 +23,8 @@ type Student struct {
 }
 
 var count uint64
+
+var mutex = &sync.Mutex{}
 
 func getCount(w http.ResponseWriter, r *http.Request) {
 	//io.WriteString(w, "get count")
@@ -42,11 +45,15 @@ func addStudent(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(reqBody, &student)
 
 	if val, flag := phoneBook[student.Name]; flag {
-		fmt.Fprintf(w, "Already there"+val)
+		fmt.Fprintf(w, "exists "+val+"\n")
 	} else {
+		//multiple users ?
+		//locks
+		//mutex.Lock()
 		phoneBook[student.Name] = student.Ph
 		count++
-		fmt.Fprintf(w, "Student added successfully")
+		fmt.Fprintf(w, "Student "+student.Name+" added successfully\n")
+		//defer mutex.Unlock()
 	}
 }
 
@@ -99,7 +106,7 @@ func save(path string, v interface{}) error {
 func load(path string, v interface{}) error {
 	f, err := os.Open(path)
 	if err != nil {
-		saveToDatabase()
+		sv()
 		f, err := os.Open(path)
 		fmt.Println(err)
 		return Unmar(f, v)
@@ -107,19 +114,25 @@ func load(path string, v interface{}) error {
 	defer f.Close()
 	return Unmar(f, v)
 }
+func sv() {
+	fmt.Println("saved to disk")
+	if err := save("./file.json", phoneBook); err != nil {
+		log.Fatalln(err)
+	}
+}
 
 func saveToDatabase() {
 	for true {
 		time.Sleep(60 * time.Second)
 		fmt.Println("saved to disk")
-		if err := save("./file.temp", phoneBook); err != nil {
+		if err := save("./file.json", phoneBook); err != nil {
 			log.Fatalln(err)
 		}
 	}
 }
 func loadFromDatabase() {
 	phoneBook = make(map[string]string)
-	if err := load("./file.temp", &phoneBook); err != nil {
+	if err := load("./file.json", &phoneBook); err != nil {
 		log.Fatalln(err)
 	}
 
