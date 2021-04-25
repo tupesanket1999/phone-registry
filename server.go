@@ -32,7 +32,7 @@ var c uint64
 
 // LOCK START
 func readLock() {
-	for Wlck > 0 {
+	for atomic.LoadInt32(&Rlck) > 0 {
 	}
 	atomic.AddInt32(&Rlck, 1)
 }
@@ -42,7 +42,7 @@ func readUnlock() {
 }
 
 func writeLock() {
-	for Rlck > 0 && Wlck > 0 {
+	for atomic.LoadInt32(&Rlck) > 0 && atomic.LoadInt32(&Wlck) > 0 {
 	}
 	atomic.AddInt32(&Wlck, 1)
 }
