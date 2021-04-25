@@ -9,10 +9,11 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/semaphore"
 )
 
 var phoneBook map[string]string
@@ -22,13 +23,42 @@ type Student struct {
 	Ph   string
 }
 
-var count uint64
+var Rlck int32
+var Wlck int32
 
-var mutex = &sync.Mutex{}
+var c uint64
 
+//var m = &sync.RWMutex{}
+
+// LOCK START
+func readLock() {
+	for Wlck > 0 {
+	}
+	atomic.AddInt32(&Rlck, 1)
+}
+
+func readUnlock() {
+	atomic.AddInt32(&Rlck, -1)
+}
+
+func writeLock() {
+	for Rlck > 0 && Wlck > 0 {
+	}
+	atomic.AddInt32(&Wlck, 1)
+}
+
+func writeUnlock() {
+	atomic.AddInt32(&Wlck, -1)
+}
+
+// LOCK ENDED
 func getCount(w http.ResponseWriter, r *http.Request) {
 	//io.WriteString(w, "get count")
-	fmt.Fprintln(w, count)
+	//	m.RLock()
+	readLock()
+	fmt.Fprintln(w, c)
+	readUnlock()
+	//	m.RUnlock()
 }
 
 func enableCors(w *http.ResponseWriter) {
@@ -37,6 +67,8 @@ func enableCors(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
 }
 
+var sem = semaphore.NewWeighted(int64(10))
+
 func addStudent(w http.ResponseWriter, r *http.Request) {
 	//io.WriteString(w, "add strudent")
 	enableCors(&w)
@@ -44,16 +76,29 @@ func addStudent(w http.ResponseWriter, r *http.Request) {
 	var student Student
 	json.Unmarshal(reqBody, &student)
 
+	//ctx := context.Background()
+
+	//what if user is not accessing map for same student name
+	//how can we find out if is wants to modify for same name
+	//sync.map
+
+	//	sem.Acquire(ctx, 1)
+
+	//atomic int
+	//read write locks
+	writeLock()
 	if val, flag := phoneBook[student.Name]; flag {
 		fmt.Fprintf(w, "exists "+val+"\n")
 	} else {
 		//multiple users ?
 		//locks
-		//mutex.Lock()
+		//		mutex.Lock()
+
 		phoneBook[student.Name] = student.Ph
-		count++
+		c++
 		fmt.Fprintf(w, "Student "+student.Name+" added successfully\n")
-		//defer mutex.Unlock()
+		//		defer m.Unlock()
+		defer writeUnlock()
 	}
 }
 
@@ -62,11 +107,13 @@ func getNameById(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 	vars := mux.Vars(r)
 	name := vars["name"]
+	readLock()
 	if val, flag := phoneBook[name]; flag {
 		fmt.Fprintf(w, phoneBook[name])
 	} else {
 		fmt.Fprintf(w, "No Such student found"+val)
 	}
+	defer readUnlock()
 }
 
 func getAllNames(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +122,7 @@ func getAllNames(w http.ResponseWriter, r *http.Request) {
 
 func initDatabase() {
 	loadFromDatabase()
-	count = uint64(len(phoneBook))
+	c = uint64(len(phoneBook))
 }
 
 var Mar = func(v interface{}) (io.Reader, error) {
